@@ -1,0 +1,483 @@
+---
+title: "Time Series"
+author: "Alexia Wells"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    number_sections: no
+    toc: yes
+    toc-depth: 3
+    toc-title: "Contents"
+editor_options: 
+  chunk_output_type: console
+execute:
+  warning: false
+  message: false
+---
+
+# Questions
+
+## From what perspective are you conducting the analysis? (Who are you? / Who are you working for?)
+
+I am conducting the analysis as a data scientist working for DSW, Designer Shoe Warehouse. The company is concerned with ensuring that their shoe supply is equal to customer demand. In other words, we want to find a balance between customers freely purchasing shoes and making sure the company doesn't lose potential sales by being over or under demand. Therefore, the goal of this analysis is to use historical data to project the next years sales to inform future inventory decisions. 
+
+## What is your question?
+
+How can we accurately forecast next year's shoe sales to inform future inventory decisions?
+
+## Describe your dataset(s) including URL (if available).
+
+For the purpose of this analysis, I used just one dataset - train.csv that contains 4 columns and 913,000 entries. While I did not include it, you can find the test.csv on Kaggle. The 4 columns are date, store, item, and sales. Here is the link: https://www.kaggle.com/competitions/demand-forecasting-kernels-only. The Kaggle submissions are evaluated on SMAPE between forecasts and actual values. However, the Kaggle competition only accepts kernel submissions, which I am unsure how to do. For that reason, I did not end up using Kaggle to investigate the results of my work. I suppose this is an opportunity for me to have more experience with how modeling and predictions would go in a real-job scenario! 
+
+## What is(are) your independent variable(s) and dependent variable(s)? 
+
+I am including the variable type based on how it was read in to the dataset, but store and item would make sense as categorical variables too. 
+
+Independent Variable:
+- sales, the sum of store-item sale price in dollars (numeric)
+
+Dependent Variables: 
+- date, date of the sale data and there are no holiday effects or store closures (date)
+- store, Store ID (numeric)
+- item, Item ID (numeric)
+
+Extra Variable Information: 
+- The dates are daily and they range from January 1st, 2013 to December 31st, 2017
+- There are 10 total stores and 50 unique items
+- The maximum amount of sales in a day was 231 while the minimum was 0. 
+
+## How are your variables suitable for your analysis method?
+For the purpose of this assignment, it was necessary to obtain a dataset that had date as one of the independent variables which is exactly what I did. However, I realized that the dataset "as is" was going to be quite challenging considering they were daily dates and too many items/stores. For that reason, I ended up extracting Year and Month from my date variable to create YearMon. I also filtered my dataset to only show me store 1 and item 1. As you will see in my code, these approaches were very useful for simplifying my analysis and making the data more suitable for what I was trying to accomplish here. 
+
+## What are your conclusions (include references to one or two CLEARLY INDICATED AND IMPORTANT graphs or tables in your output)?
+
+### Thoughts
+
+This was another tricky dataset that I feel confident with my work on. One of the most important aspects of my approach was simplifying and manipulating my dataset as I already mentioned above. I was able to transform convoluted data into meaningful monthly,yearly data. Please take a look at my **Time Series Plot** to understand the difference this made. Other than that, I had two main approaches - a hand calculated arima and an auto arima. With both, I did cross validation and got predictions. 
+
+While I diligently sought to understand each piece of my data when it came to identifying the hyperparameters (p,d,q), I quickly realized that what I selected did not peform well. For my hand calculated arima, I actually did 9 different versions. I picked my best model by identifying which one had the lowest AIC. Said model, ended up having an RMSE of 222.0542, which is ridiculously high. The hand calculated model had a difficult time picking up the intricacies of the data. Consequently, when given the task to predict it did awful.
+
+However, the auto arima did an amazing job and picking up the complexities. The RPMSE was 36.82628, considering that we are dealing with sales data, I would argue that is an amazing result. On top of that, the predictions plot was excellent, it felt accurate as what we could expect in the coming year. 
+
+To reference the differences between the hand calculated and auto predictions plots please see **ARIMA Plot Predictions Comparison.** It is important to note that the auto arima did use (p,d,q)(P,D,Q) whereas my hand calculated models only focused on (p,d,q). I feel that is one reason my hand calculated model went wrong!  
+
+### Answer to Main Question
+To accurately forecast next year's shoe sales it would be a good idea to follow my approach below with my feature engineered columns YrMon and auto arima calculations. Another great idea would be to output the 95% confidence interval of the predictions per month that way DSW executives can use that as a baseline for their inventory decisions. 
+
+## What are your assumptions and limitations? What robustness checks did you perform or would you perform?
+
+### Assumptions 
+The main assumption was whether the data was stationary. With an adf test, I was able to determine that my time series data was exactly that, without differencing. 
+
+Additional assumptions I checked were that of linearity, normality, and equal variance. To be truthful, in the paper provided in class it didn't look like that was checked. I did it anyway, partly as a robustness check, to make sure that the data was ready to continue with modeling. Thankfully, I thought they were strong enough to continue. 
+
+### Limitations and Robustness Checks
+
+Limitations:
+As I stated earlier, I had lots of information and data that I needed to simplify. This took time and sometimes there were pieces I realized later on that needed to be included. For example, making sure the store and item were the same drastically improved the process. Another limitation I had was that I couldn't check my results/predictions against kaggle. This is because of the kernel issue that I mentioned.  
+
+Lastly, the way I manipulated the dataset is certainly not representative of all products and stores. Until I gain more practice with arima skills, I will not do further analysis combining all of them (products + stores). However, I do think it would be awesome to do and great practice, just above my capabilties at the moment.
+
+
+Robustness Checks: 
+I made a big effort to check for robustness throughout this analysis. The first was to check YrMon vs. YrMonDay. I quickly realized that YrMon would be more approachable and interpretable for the time being. Next, I did a second stationary test, KPSS. I found it really odd that the KPSS test actually failed considering the adf did not. Since it was my first time working with both tests, I don't know if one is truer than the other. I determined that maybe the time series really is stationary but there was some sort of trend component that the KPSS picked up on. 
+
+As I continued on, it was important that I tested multiple different values for p,d,q. This helped me lower the initial hand calculated model AIC. I also felt that checking my hand calculated model against the auto arima counted as a robustness check. What I learned was that my hand calculated model didn't have the best hyper parameters selected, like I may have thought. Finally, I did varying lag options for the ljung box tests and applied cross validation for my predictions.  
+
+
+# Simple EDA
+
+## Preparing Data
+```{r}
+# Read in the data
+train <-  vroom::vroom("train.csv")
+test <-  vroom::vroom("test.csv")
+```
+
+```{r, include=FALSE}
+# Load libraries
+library(tidyverse)
+library(forecast)
+library(tidymodels)
+library(ggplot2)
+library(patchwork)
+library(kableExtra)
+library(forecast)
+library(tseries)
+library(astsa)
+library(vars)
+library(ggplot2)
+```
+
+```{r}
+# Separate train date column to include: year, month, day
+my_recipe <- recipe(sales ~ ., data = train) |> 
+  step_date(date, features = c("month", "doy", "year"))
+
+# Get new dataset
+og_prepped_train <- prep(my_recipe) |> 
+  juice() 
+```
+
+### Creating YrMon variable 
+```{r}
+# Summarize all sales per month, per year and filter by store 1 item 1
+prepped_train <- og_prepped_train %>%
+  dplyr::select(-date) %>%
+  filter(store == 1, item == 1) %>%
+  group_by(store, item, date_year, date_month) %>%
+  summarize(sales = sum(sales)) %>%
+  ungroup()
+
+# Look at month abbreviation and transform it to numeric month value
+ptrain <- prepped_train %>%
+  mutate(date_month = as.numeric(match(date_month, month.abb)))
+         
+ptrain <- ptrain |> 
+  mutate(YrMon = date_year + (date_month - 0.5) / 12)
+```
+
+### Robustness Check against YrMon Approach Using YrMonDay
+Using a similar approach to YrMon, this new variable is filtered for store 1, item 1. Since the data is per day, we cannot sum all the sales. The final output is too over the top, so much information. Look at the Time Series Plot section for a direct comparison of YrMon vs. YrMonDay. This check confirms that YrMon will be better for the purpose of this analysis. 
+
+```{r}
+# Using og_prepped_train since it still contains the day variable
+ptrain_additional <- og_prepped_train |> 
+  filter(store == 1, item == 1) %>%
+  mutate(YrMonDay = date_year + (date_doy - 0.5) / 365)
+
+# Time series plot of the sales anomalies with YrMonDay along the x-axis with a smooth curve overlaid to emphasize the non-linear aspect of the data. Too much data... 
+YrMonDay <- ggplot(data=ptrain_additional, aes(x=YrMonDay, y=sales)) + geom_line() + geom_point() + geom_smooth(method="lm", se=FALSE)
+```
+
+## Tables and Graphs
+
+### Sales by Store Bar Plot and Table
+
+Store 2 had the highest sales and store 7 had the lowest.
+```{r}
+# Bar Plot
+ggplot(data = og_prepped_train, aes(x = as.factor(store), y = sales, fill = as.factor(store))) +
+  geom_bar(stat = "summary", fun = "sum") +
+  theme_minimal() +
+  labs(x = "Store", y = "Total Sales", title = "Sales by Store")
+
+# Table
+og_prepped_train |> 
+  group_by(store) |> 
+  summarize("Total Sales" = sum(sales)) |> 
+  kbl() |> 
+  kable_styling()
+```
+
+### Sales Distribution for Store 1
+
+No outliers for store 1, that is nice. 
+```{r}
+ggplot(data = ptrain, aes(y = sales)) +
+  geom_boxplot(fill = "indianred1") +
+  theme_minimal() +
+  labs(y = "Sales", title = "Sales Distribution for Store 1")
+```
+
+
+### Time Series Plot 
+Here are two time series plots of the sales anomalies with YrMonDay and YrMon along the x-axis with a smooth curve overlaid to emphasize the non-linear aspect of the data. As we can see, the YrMonDay approach is too convoluted. The trends in both however, are still positive and linear, but I believe it will be better to continue using YrMon instead. In my opinion, using YrMon will be easier to interpret. 
+
+```{r}
+# Looking at time series plot for YrMon
+YrMon <- ggplot(data=ptrain, aes(x=YrMon, y=sales)) + geom_line() + geom_point() + geom_smooth(method="lm", se=FALSE)
+
+# Let's compare the two and see which is better, YrMon is better for now
+YrMonDay + YrMon
+```
+
+
+### ACF plot 
+Because the time series plot for YrMon looked fairly linear, I will use just a linear model. The ACF plot below shows that there is strong temporal correlation seemingly both positive and negative at times. 
+```{r}
+sales.lm <- lm(sales~YrMon, data=ptrain)
+ggAcf(resid(sales.lm))
+```
+
+
+## Creating Time Series Object
+```{r}
+# Check where the data starts, 2013, month 1
+head(ptrain)[1,]
+
+# Can get rid of other variables besides sales because creating time series
+simple_train <- ptrain |>
+  dplyr::select(c(sales))
+
+# Using info above, define response variable as time series
+my.ts <- ts(data = simple_train, 
+            start=c(2013,1), end=c(2017, 12), 
+            frequency= 12)
+```
+
+
+# Checking Assumptions
+Typically this section would be included after the tables/graphs in the EDA. Please note that the assumptions are the last section for this document because I didn't want to get the rmd document too convoluted. 
+
+### Stationary
+Based off the Augmented Dickey-Fuller Test, the time series is stationary from the start. This time series is used both for the hand-calculated ARIMA and the auto ARIMA.
+
+However, a robustness check using the KPSS Test states the opposite, that the series is non-stationary. This brings into question which one is actually true. Could the series really be stationary but there is some sort of trend component? 
+
+```{r, warning=FALSE}
+# Run Augmented Dickey-Fuller Test
+adf.test(my.ts, alternative = "stationary")
+# It is stationary from the start, didn't need to use differencing
+
+# Robustness check with KPSS Test
+kpss.test(my.ts)
+# In this case, we would reject the null and conclude the time series is not stationary based off a deterministic trend or level
+```
+
+
+## Model Validation for Hand Calculated ARIMA
+Overall, I think this model can be used after checking the assumptions.
+
+### Linearity
+Feels kinda odd, theres a few points near Fitted Values that are in a row around 600.
+```{r, warning=FALSE}
+# This is the best hand calculated model fit found from down below
+hand_calculated_arima <- Arima(my.ts, order=c(p=2, d=2, q=2))
+
+fitted <- fitted(hand_calculated_arima)
+residuals <- resid(hand_calculated_arima)
+ggplot(mapping=aes(x=fitted, y=residuals)) + geom_point() +
+  xlab("Fitted Values") + ylab("Resids")
+```
+
+### Normality
+Honestly, relatively normal plot. 
+```{r, warning=FALSE}
+ggplot() + geom_density(aes(x=residuals)) + xlab("Resids")
+```
+
+### Equal Variance
+Actually decent with the residuals too. 
+```{r}
+acf(resid(hand_calculated_arima))
+```
+
+
+## Model Validation for Auto ARIMA
+
+### Linearity
+The fitted values vs. residual plot looks linear enough to me.
+```{r, warning=FALSE}
+# arima autocorrelated model...
+arima.fit <- auto.arima(my.ts, stepwise=FALSE, max.p=2, max.q=2, max.d=1, ic="bic")
+
+fitted <- fitted(arima.fit)
+residuals <- resid(arima.fit)
+ggplot(mapping=aes(x=fitted, y=residuals)) + geom_point() +
+  xlab("Fitted Values") + ylab("Resids")
+```
+
+### Normality
+Density plot looks relatively normal, not really any outliers. 
+```{r, warning=FALSE}
+ggplot() + geom_density(aes(x=residuals)) + xlab("Resids")
+```
+
+### Equal Variance
+No more autocorrelation left in the decorrelated residuals.
+```{r}
+acf(resid(arima.fit))
+```
+
+
+# Modeling
+
+## Hand Calculated ARIMA 
+
+### Determining p,q,d
+The adf test from the assumption checks above showed that the data is stationary from the start and it looks like differencing won't be necessary. The acf plot shows that there is influence from the previous months affecting the current month.
+Finally, pcaf shows a big spike at lag one, but mostly realxes after that point. 
+
+```{r}
+# I determined d from the adf test in checking assumptions section. We can now reject the null hypothesis of the series being non-stationary. Considering it is stationary, the value of d (the trend component) in the ARIMA model is 0.
+
+# Determining q by autocorrelation
+acf((my.ts),main='')
+# q should be 3? Big spikes, after 3 seem to even more out... From this graph looks like there is absolutely an influence from the previous months affecting the current month. A majority of them are signficant i
+
+
+# Determining p = 1? Looks like there is a big spike at 1 and the data stablizes more from that point on. 
+pacf(diff(my.ts),main='')
+```
+
+### Estimation 
+```{r}
+# Hand calculated ARIMA based off values above
+model_fit<- Arima(my.ts, order=c(p=1, d=0, q=3))
+model_fit$aic
+
+#you saw the identification of p, d and q has certain elements of subjectvity. 
+
+# Robustness check of different hyperparameters 
+model_fit2 <- Arima(my.ts, order=c(p=1, d=0, q=6))
+model_fit3 <- Arima(my.ts, order=c(p=1, d=0, q=1))
+model_fit4 <- Arima(my.ts, order=c(p=1, d=0, q=2))
+model_fit5 <- Arima(my.ts, order=c(p=2, d=0, q=4))
+model_fit6 <- Arima(my.ts, order=c(p=2, d=1, q=4))
+model_fit7 <- Arima(my.ts, order=c(p=1, d=2, q=2))
+model_fit8 <- Arima(my.ts, order=c(p=2, d=2, q=2))
+model_fit9 <-Arima(my.ts, order=c(p=1, d=2, q=1))
+
+# Best AIC
+model_fit8$aic
+```
+
+```{r, include=FALSE}
+# These are giving me higher AICs 
+model_fit3$aic
+
+# Lower AICs - taking lowest AIC as best model, in order of lowest to highest
+model_fit8$aic
+model_fit9$aic
+model_fit7$aic
+model_fit5$aic
+model_fit2$aic
+model_fit6$aic
+model_fit4$aic
+```
+
+### Diagnosis 
+With the best model, model fit 8, and several different lag choices, there does seem to be remaining auto correlation in leftover residuals. In other words, the residuals are not behaving like white noise...
+
+```{r}
+# Model fit 8 was the best so lets continue with this one
+checkresiduals(model_fit8)
+
+# Seems like the lag vs. ACF plot and residual plot we see a residual slightly outside the average?
+residuals_fit <- residuals(model_fit8)
+
+# Robustness check for lag::
+# Perform Ljung-Box test on entire data 
+ljung_box_test <- Box.test(residuals_fit, lag = 59.9, type = "Ljung-Box")
+ljung_box_test
+
+# Lag accounting for annual seasonality 
+ljung_box_test2 <- Box.test(residuals_fit, lag = 12, type = "Ljung-Box")
+ljung_box_test2
+
+# Lag accounting for residual autocorrelation
+ljung_box_test3 <- Box.test(residuals_fit, lag = 20, type = "Ljung-Box")
+ljung_box_test3
+```
+
+### Cross Validation + Predictions
+Cross validation for most recent year of sales (2017). The RPMSE is 222.0542. This is VERY high. The hand calculated model is having a hard time picking up the intricacies of the data, thus when given the task to predict it isn't doing well. This means that I went wrong somewhere in my hand calculations, or should have also accounted for P, Q, and D too for better accuracy! 
+```{r, warning=FALSE}
+set.seed(123)  # Setting seed for reproducibility
+
+# Split data into training and test sets
+cv_train.set <- subset(ptrain, date_year!=2017)
+cv_test.set <- subset(ptrain, date_year==2017)
+
+# Fill arima with model8 set up 
+cv.model <- Arima(ts(cv_train.set$sales, frequency=12), order=c(2,2,2))
+cv.model <- forecast(cv.model, h=12)
+RPMSE <- (cv.model$mean - cv_test.set$sales)^2 %>% mean() %>% sqrt()
+RPMSE
+
+# The hand calculated arima is having a really hard time at following the intricacies of the data. HUGE confidence interval
+pred.frame <- data.frame(YrMon=2017+(1:12-0.5)/12, Pred=cv.model$mean, lower=cv.model$lower[,'95%'], upper=cv.model$upper[,'95%'])
+ggplot() + geom_ribbon(data=pred.frame, aes(x=YrMon, ymin=lower,
+                                            max=upper), fill="gray70") +
+  geom_line(data=ptrain, aes(x=YrMon, y=sales)) +
+  geom_line(data=pred.frame, aes(x=YrMon, y=Pred), color="red")
+
+# Bad 
+next.year <- forecast(model_fit8, h=12)
+compare_hand_arima <- plot(next.year)
+autoplot(next.year) +
+  labs(title = "Forecast for the Next 12 Months",
+       x = "Time",
+       y = "Forecasted Values") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 12)) + # Adjust number of x-axis ticks
+  theme_minimal()
+```
+
+## Auto ARIMA/Robustness Check 
+
+### Estimation
+
+The auto ARIMA said this would be the best model hyperparameters
+(p = 0,d = 1, q = 1)(P = 0, D = 1, Q = 0). 
+
+This model is actually accounting for d, q, and D. Seeing d set to 1 was most shocking for me since in my hand calculations I was sure that the data was stationary from the adf test. It is also important to note that the AIC for the auto arima is significantly better, 470.1147. The lowest AIC I got with my hand calculated data was 689.99. 
+
+```{r}
+# Make arima model
+arima.fit <- auto.arima(my.ts, stepwise=FALSE, max.p=2, max.q=2, max.d=1, ic="aic")
+
+summary(arima.fit)
+arima.fit$aic
+# The auto arima is significantly better, makes me question if the way I approached it by hand was incorrect
+```
+
+### Diagnosis 
+
+First, the residuals are not showing any trend and seem to be hovering around the the mean. ACF of residual does not show any autocorrelation. Finally, Ljung-Box test shows a large p-value, again showing that the residuals are behaving like white noise. The checks looked great and my robustness checks for lag did not even break the results! 
+```{r}
+# Both checks look great!!
+
+# Checking residuals for trends
+checkresiduals(arima.fit)
+
+# Perform Ljung-Box test
+residuals_fit <- residuals(arima.fit)
+
+# Robustness check for lag again, entire data
+ljung_box_test <- Box.test(residuals_fit, lag = 59.9, type = "Ljung-Box")
+ljung_box_test
+
+# Lag accounting for annual seasonality 
+ljung_box_test2 <- Box.test(residuals_fit, lag = 12, type = "Ljung-Box")
+ljung_box_test2
+
+# Lag accounting for residual autocorrelation
+ljung_box_test3 <- Box.test(residuals_fit, lag = 20, type = "Ljung-Box")
+ljung_box_test3
+```
+
+### Cross Validation + Predictions
+Cross validation for most recent year of sales. The RPMSE is 36.82628. Considering that we are dealing with sales, I would argue that is a good result.  
+```{r, warning=FALSE}
+set.seed(123)  # Setting seed for reproducibility
+
+# Split data into training and test sets
+cv_train.set <- subset(ptrain, date_year!=2017)
+cv_test.set <- subset(ptrain, date_year==2017)
+
+cv.model <- Arima(ts(cv_train.set$sales, frequency=12), order=c(0,1,1), seasonal=c(0,1,0))
+cv.model <- forecast(cv.model, h=12)
+RPMSE <- (cv.model$mean - cv_test.set$sales)^2 %>% mean() %>% sqrt()
+RPMSE
+
+# The auto arima is doing a GREAT JOB at following the intricacies of the data
+pred.frame <- data.frame(YrMon=2017+(1:12-0.5)/12, Pred=cv.model$mean, lower=cv.model$lower[,'95%'], upper=cv.model$upper[,'95%'])
+ggplot() + geom_ribbon(data=pred.frame, aes(x=YrMon, ymin=lower,
+                                            max=upper), fill="gray70") +
+  geom_line(data=ptrain, aes(x=YrMon, y=sales)) +
+  geom_line(data=pred.frame, aes(x=YrMon, y=Pred), color="red")
+
+# This looks AWESOME, way better than my hand calculated work 
+next.year_auto <- forecast(arima.fit, h=12)
+plot(next.year_auto)
+```
+
+
+# ARIMA Plot Predictions Comparison
+The left hand side is the hand calculated arima, and the right is the auto calculated arima. 
+```{r, warning=FALSE}
+par(mfrow = c(1, 2))
+plot(next.year)
+plot(next.year_auto)
+```
